@@ -1,44 +1,68 @@
-import { useState } from "react";
-import { Activity, ArrowUpRight, Check, Globe2, Loader2, Plus, Radar, ShieldCheck, Wifi } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
+import { Activity, CheckCircle2, ExternalLink, Loader2, MessageCircle, Radar, ShieldAlert, XCircle } from "lucide-react";
+import { trpc } from "@/lib/trpc";
 
-const initialSites = [
-  { domain: "sinyal.app", location: "İstanbul, TR", latency: "42 ms", status: "up" },
-  { domain: "api.sinyal.app", location: "Frankfurt, DE", latency: "68 ms", status: "up" },
-  { domain: "panel.sinyal.app", location: "Londra, UK", latency: "—", status: "checking" },
-];
+type ScanState = "idle" | "loading" | "waiting" | "done" | "error";
+const sourceName = (source: string) => source === "btk" ? "BTK" : "GüvenliNet";
 
 export default function Home() {
   const [domain, setDomain] = useState("");
-  const [sites, setSites] = useState(initialSites);
-  const [checking, setChecking] = useState(false);
+  const [scanDomain, setScanDomain] = useState("");
+  const [state, setState] = useState<ScanState>("idle");
+  const [error, setError] = useState("");
+  const monitor = trpc.monitor.challenge.useMutation();
+  const result = trpc.monitor.results.useQuery(
+    { domain: scanDomain || "example.com" },
+    { enabled: state === "waiting" && Boolean(scanDomain), refetchInterval: state === "waiting" ? 2500 : false },
+  );
+  useEffect(() => {
+    if (result.data && result.data.length > 0) setState("done");
+  }, [result.data]);
 
-  const addSite = () => {
-    const clean = domain.trim().replace(/^https?:\/\//, "");
+  const start = async (event: FormEvent) => {
+    event.preventDefault();
+    const clean = domain.trim().replace(/^https?:\/\//i, "").replace(/\/$/, "");
     if (!clean) return;
-    setChecking(true);
-    setTimeout(() => {
-      setSites((current) => [{ domain: clean, location: "Yeni izleme noktası", latency: "51 ms", status: "up" }, ...current]);
-      setDomain("");
-      setChecking(false);
-    }, 650);
+    setScanDomain(clean);
+    setError("");
+    setState("loading");
+    try {
+      const response = await monitor.mutateAsync({ domain: clean });
+      if (Object.keys(response.sources).length === 0) {
+        setError(Object.values(response.sourceErrors).join(" ") || "Hiçbir kaynak CAPTCHA üretemedi.");
+        setState("error");
+      } else {
+        setState("waiting");
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Kontrol başlatılamadı.");
+      setState("error");
+    }
   };
 
+  const sources = Object.entries(monitor.data?.sources ?? {});
+  const sourceErrors = Object.entries(monitor.data?.sourceErrors ?? {});
+  const results = result.data ?? [];
+  const telegramError = monitor.data?.telegramError;
+
   return (
-    <main className="min-h-screen bg-[#07100d] text-[#e9f3ed] selection:bg-[#8ef0b5] selection:text-[#07100d]">
-      <div className="pointer-events-none fixed inset-0 opacity-30 [background-image:radial-gradient(#234438_1px,transparent_1px)] [background-size:28px_28px]" />
-      <div className="relative mx-auto max-w-6xl px-5 pb-16 sm:px-8">
+    <main className="min-h-screen bg-[#07100d] text-[#e9f3ed]">
+      <div className="mx-auto max-w-6xl px-5 pb-16 sm:px-8">
         <header className="flex items-center justify-between py-7">
-          <div className="flex items-center gap-3"><div className="grid size-9 place-items-center rounded-xl bg-[#8ef0b5] text-[#07100d]"><Radar size={19} /></div><span className="font-mono text-sm font-bold tracking-[0.24em]">SİNYAL<span className="text-[#8ef0b5]">_</span></span></div>
-          <div className="hidden items-center gap-2 rounded-full border border-[#244436] bg-[#0d1a15]/80 px-3 py-2 text-xs text-[#9ab4a5] sm:flex"><span className="size-2 rounded-full bg-[#8ef0b5] shadow-[0_0_12px_#8ef0b5]" /> Sistemler normal</div>
+          <a href="/" className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded-xl bg-[#8ef0b5] text-[#07100d]"><Radar size={19} /></span><span className="font-mono text-sm font-bold tracking-[.24em]">SİNYAL<span className="text-[#8ef0b5]">_</span></span></a>
+          <a href="/admin" className="text-sm text-[#9ab4a5] hover:text-[#8ef0b5]">Admin / durum</a>
         </header>
-
-        <section className="grid gap-12 pb-16 pt-12 lg:grid-cols-[1.05fr_.95fr] lg:items-end lg:pt-20">
-          <div><p className="mb-5 flex items-center gap-2 font-mono text-xs uppercase tracking-[.22em] text-[#8ef0b5]"><Activity size={14} /> Gerçek ağlardan canlı izleme</p><h1 className="max-w-3xl text-5xl font-semibold leading-[.98] tracking-[-.06em] sm:text-7xl">İnternetin<br /><span className="text-[#8ef0b5]">nabzını</span> tut.</h1><p className="mt-7 max-w-xl text-base leading-7 text-[#9ab4a5]">Alan adlarınızın erişilebilirliğini farklı şehirlerden kontrol edin. Kesintileri fark etmeden önce görün.</p></div>
-          <div className="rounded-3xl border border-[#244436] bg-[#0d1a15]/90 p-5 shadow-2xl shadow-black/20 backdrop-blur sm:p-7"><div className="mb-5 flex items-center justify-between"><div><p className="font-mono text-xs uppercase tracking-widest text-[#718d7d]">Yeni izleme noktası</p><h2 className="mt-2 text-xl font-medium">Bir alan adı ekle</h2></div><Globe2 className="text-[#8ef0b5]" size={22} /></div><div className="flex gap-2"><input value={domain} onChange={(e) => setDomain(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addSite()} placeholder="ornek.com" className="min-w-0 flex-1 rounded-xl border border-[#315542] bg-[#07100d] px-4 py-3 text-sm outline-none transition placeholder:text-[#4e695a] focus:border-[#8ef0b5]" /><button onClick={addSite} disabled={checking} className="grid size-12 shrink-0 place-items-center rounded-xl bg-[#8ef0b5] text-[#07100d] transition hover:bg-[#b4ffcc] active:scale-95 disabled:opacity-60">{checking ? <Loader2 className="animate-spin" size={18} /> : <Plus size={20} />}</button></div><p className="mt-4 flex items-center gap-2 text-xs text-[#718d7d]"><ShieldCheck size={14} className="text-[#8ef0b5]" /> TLS, DNS ve HTTP kontrolleri otomatik yapılır</p></div>
+        <section className="grid gap-10 pb-14 pt-16 lg:grid-cols-[1fr_.9fr] lg:items-end">
+          <div><p className="mb-5 flex items-center gap-2 font-mono text-xs uppercase tracking-[.22em] text-[#8ef0b5]"><Activity size={14} /> BTK + GüvenliNet canlı sorgu</p><h1 className="max-w-2xl text-5xl font-semibold leading-[.98] tracking-[-.06em] sm:text-7xl">İki kaynaktan<br /><span className="text-[#8ef0b5]">tek sinyal.</span></h1><p className="mt-7 max-w-xl text-base leading-7 text-[#9ab4a5]">Domaininizi iki resmi kaynaktan kontrol ederiz. CAPTCHA görselleri Telegram grubunuza gider; botunuza kodu gönderdiğinizde sonuçlar burada birleşir.</p></div>
+          <div className="rounded-3xl border border-[#244436] bg-[#0d1a15]/90 p-6 shadow-2xl shadow-black/20"><p className="font-mono text-xs uppercase tracking-widest text-[#718d7d]">Yeni çift kaynak kontrolü</p><h2 className="mt-2 text-xl font-medium">Alan adı ekle</h2><form onSubmit={start} className="mt-5 flex gap-2"><input value={domain} onChange={(event) => setDomain(event.target.value)} placeholder="ornek.com" className="min-w-0 flex-1 rounded-xl border border-[#315542] bg-[#07100d] px-4 py-3 text-sm outline-none focus:border-[#8ef0b5]" /><button disabled={state === "loading"} className="grid size-12 shrink-0 place-items-center rounded-xl bg-[#8ef0b5] text-[#07100d] hover:bg-[#b4ffcc] disabled:opacity-60">{state === "loading" ? <Loader2 className="animate-spin" size={18} /> : <Activity size={18} />}</button></form><p className="mt-4 flex gap-2 text-xs text-[#718d7d]"><MessageCircle size={14} className="text-[#8ef0b5]" /> CAPTCHA Telegram grubuna otomatik iletilir; yapılandırılmamışsa aşağıda görsel görünür</p></div>
         </section>
-
-        <section className="overflow-hidden rounded-3xl border border-[#244436] bg-[#0b1712]/90"><div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#244436] px-5 py-5 sm:px-7"><div><h2 className="text-lg font-medium">İzlenen alan adları</h2><p className="mt-1 text-sm text-[#718d7d]">Son kontrol: şimdi</p></div><div className="flex items-center gap-6 text-sm"><div><span className="font-mono text-xl text-[#8ef0b5]">{sites.filter((s) => s.status === "up").length}</span><span className="ml-2 text-[#718d7d]">erişilebilir</span></div><div><span className="font-mono text-xl text-[#f0c674]">{sites.filter((s) => s.status === "checking").length}</span><span className="ml-2 text-[#718d7d]">kontrol</span></div></div></div><div className="divide-y divide-[#1b3226]">{sites.map((site) => <div key={site.domain} className="group flex flex-wrap items-center gap-4 px-5 py-5 transition hover:bg-[#102019] sm:px-7"><div className={`grid size-10 place-items-center rounded-full ${site.status === "up" ? "bg-[#8ef0b5]/10 text-[#8ef0b5]" : "bg-[#f0c674]/10 text-[#f0c674]"}`}>{site.status === "up" ? <Check size={18} /> : <Loader2 className="animate-spin" size={18} />}</div><div className="min-w-[180px] flex-1"><p className="font-mono text-sm">{site.domain}</p><p className="mt-1 text-xs text-[#718d7d]">{site.location}</p></div><div className="hidden items-center gap-2 text-sm text-[#9ab4a5] sm:flex"><Wifi size={15} className="text-[#8ef0b5]" /> {site.latency}</div><span className={`rounded-full px-3 py-1 text-xs ${site.status === "up" ? "bg-[#8ef0b5]/10 text-[#8ef0b5]" : "bg-[#f0c674]/10 text-[#f0c674]"}`}>{site.status === "up" ? "Çalışıyor" : "Kontrol ediliyor"}</span><ArrowUpRight size={17} className="text-[#4e695a] transition group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-[#8ef0b5]" /></div>)}</div></section>
-        <footer className="flex items-center justify-between pt-10 text-xs text-[#4e695a]"><span>SİNYAL / MONİTORING</span><span className="font-mono">v0.1 — Türkiye</span></footer>
+        {state !== "idle" && <section className="rounded-3xl border border-[#244436] bg-[#0b1712]/90 p-6 sm:p-8"><div className="flex flex-wrap items-center justify-between gap-4"><div><p className="font-mono text-xs uppercase tracking-widest text-[#718d7d]">{scanDomain}</p><h2 className="mt-2 text-2xl font-medium">{state === "waiting" ? "Doğrulama bekleniyor" : state === "done" ? "Kaynak sonuçları" : state === "error" ? "Kontrol başlatılamadı" : "Kaynaklar hazırlanıyor"}</h2></div>{state === "waiting" && <div className="flex items-center gap-2 rounded-full bg-[#f0c674]/10 px-3 py-2 text-xs text-[#f0c674]"><Loader2 size={14} className="animate-spin" /> Yanıt bekleniyor</div>}</div>
+          {error && <p className="mt-5 rounded-xl bg-[#ff8c8c]/10 p-4 text-sm text-[#ffb0b0]">{error}</p>}
+          {telegramError && <div className="mt-5 rounded-xl border border-[#f0c674]/30 bg-[#f0c674]/10 p-4 text-sm text-[#f5d98b]"><div className="flex items-center gap-2 font-medium"><MessageCircle size={16} /> Telegram durumu</div><p className="mt-2 leading-6">{telegramError}</p><p className="mt-2 text-xs text-[#c6aa62]">Gerçek Telegram gönderimi için TELEGRAM_BOT_TOKEN ve TELEGRAM_CHAT_ID tanımlanmalıdır.</p></div>}
+          {state === "waiting" && <div className="mt-6"><p className="mb-4 text-sm text-[#9ab4a5]">Aşağıdaki CAPTCHA görsellerini Telegram grubunda yanıtlayın. Bot bağlantısı hazır olduğunda şu komut biçimini kullanın: <code className="text-[#8ef0b5]">/kod btk KOD</code> veya <code className="text-[#8ef0b5]">/kod guvenlinet KOD</code>.</p><div className="grid gap-4 md:grid-cols-2">{sources.map(([source, item]) => <div key={source} className="rounded-2xl border border-[#315542] bg-[#07100d] p-5"><div className="flex items-center justify-between"><span className="font-mono text-xs uppercase tracking-widest text-[#718d7d]">{sourceName(source)} CAPTCHA</span><MessageCircle size={17} className="text-[#8ef0b5]" /></div><img src={item.image} alt={`${sourceName(source)} CAPTCHA`} className="mt-4 h-20 w-full rounded-lg bg-white object-contain p-2" /><p className="mt-3 text-xs leading-5 text-[#718d7d]">{telegramError ? "Telegram ayarı eksik; bu görseli yalnızca önizleme olarak görebilirsiniz." : "Görsel Telegram grubuna gönderildi; kodu bot mesajına yanıt olarak iletin."}</p></div>)}{sourceErrors.map(([source, message]) => <div key={source} className="rounded-2xl border border-[#ff8c8c]/30 bg-[#ff8c8c]/10 p-5"><div className="flex items-center gap-2 text-sm font-medium text-[#ffb0b0]"><XCircle size={17} /> {sourceName(source)} kullanılamıyor</div><p className="mt-3 text-sm leading-6 text-[#e5b0b0]">{message}</p></div>)}</div></div>}
+          {state === "done" && <div className="mt-6 grid gap-4 md:grid-cols-2">{results.map((item) => <div key={item.source} className="rounded-2xl border border-[#315542] bg-[#07100d] p-5"><div className="flex items-center justify-between"><span className="font-mono text-xs uppercase tracking-widest text-[#718d7d]">{sourceName(item.source)}</span>{item.status === "blocked" ? <ShieldAlert className="text-[#ff8c8c]" size={20} /> : item.status === "clear" ? <CheckCircle2 className="text-[#8ef0b5]" size={20} /> : <XCircle className="text-[#f0c674]" size={20} />}</div><h3 className={`mt-4 text-lg ${item.status === "blocked" ? "text-[#ff8c8c]" : item.status === "clear" ? "text-[#8ef0b5]" : "text-[#f0c674]"}`}>{item.status === "blocked" ? "Engel var" : item.status === "clear" ? "Engel yok" : item.status === "captcha_invalid" ? "CAPTCHA hatalı" : "İnceleme gerekli"}</h3><p className="mt-2 text-sm leading-6 text-[#9ab4a5]">{item.verdict}</p><details className="mt-3 text-xs text-[#718d7d]"><summary className="cursor-pointer">Kaynak yanıtını göster</summary><p className="mt-2 leading-5">{item.evidence}</p></details><a href={item.sourceUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 text-xs text-[#718d7d] hover:text-[#8ef0b5]">Kaynağı aç <ExternalLink size={13} /></a></div>)}</div>}
+        </section>}
+        <footer className="flex justify-between pt-10 text-xs text-[#4e695a]"><span>SİNYAL / RESMİ KAYNAK KARŞILAŞTIRMASI</span><span>BTK · GüvenliNet</span></footer>
       </div>
     </main>
   );
