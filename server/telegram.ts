@@ -51,11 +51,18 @@ export async function startTelegramMonitor(domain: string, publicBaseUrl: string
   } catch (error) { telegramError = error instanceof Error ? error.message : "Telegram gönderimi başarısız."; }
   return { ...challenge, telegramSent: sent.btk && sent.guvenlinet, telegramError };
 }
-function parseCode(text: string) { const match = text.trim().match(/^\/?kod\s+(btk|guvenlinet)\s+([^\s]+)$/i) || text.trim().match(/^\/?(btk|guvenlinet)\s+([^\s]+)$/i); return match ? { source: match[1].toLowerCase() as Source, code: match[2] } : null; }
+export function parseCode(text: string, repliedSource?: Source) {
+  const trimmed = text.trim();
+  const match = trimmed.match(/^\/?kod\s+(btk|guvenlinet)\s+([^\s]+)$/i) || trimmed.match(/^\/?(btk|guvenlinet)\s+([^\s]+)$/i);
+  if (match) return { source: match[1].toLowerCase() as Source, code: match[2] };
+  if (repliedSource && /^[a-z0-9]{3,64}$/i.test(trimmed)) return { source: repliedSource, code: trimmed };
+  return null;
+}
 export async function handleTelegramUpdate(update: TelegramUpdate) {
   cleanupMonitorChallenges(); const message = update.message; if (!message?.chat || !chatId() || String(message.chat.id) !== chatId()) return { handled: false as const };
-  const parsed = message.text ? parseCode(message.text) : null; if (!parsed) return { handled: false as const };
-  const reply = message.reply_to_message?.message_id; const item = reply ? pending.get(String(reply)) : Array.from(pending.values()).sort((a, b) => b.createdAt - a.createdAt).find((x) => x.source === parsed.source); if (!item || item.source !== parsed.source || Date.now() - item.createdAt > 5 * 60 * 1000) { await sendMessage("Bekleyen CAPTCHA bulunamadı. Önce yeni domain kontrolü başlatın."); return { handled: true as const, status: "no_challenge" as const }; }
+  const reply = message.reply_to_message?.message_id; const repliedItem = reply ? pending.get(String(reply)) : undefined;
+  const parsed = message.text ? parseCode(message.text, repliedItem?.source) : null; if (!parsed) return { handled: false as const };
+  const item = repliedItem ?? Array.from(pending.values()).sort((a, b) => b.createdAt - a.createdAt).find((x) => x.source === parsed.source); if (!item || item.source !== parsed.source || Date.now() - item.createdAt > 5 * 60 * 1000) { await sendMessage("Bekleyen CAPTCHA bulunamadı. Önce yeni domain kontrolü başlatın."); return { handled: true as const, status: "no_challenge" as const }; }
   try { const result = await querySource({ challengeId: item.challengeId, domain: item.domain, securityCode: parsed.code }); pending.delete(String(item.messageId)); const current = results.get(item.domain) || { domain: item.domain, items: [], createdAt: Date.now() }; current.items = [...current.items.filter((x) => x.source !== result.source), result]; current.createdAt = Date.now(); results.set(item.domain, current); const label = result.status === "blocked" ? "ENGEL VAR" : result.status === "clear" ? "ENGEL YOK" : result.status === "captcha_invalid" ? "CAPTCHA HATALI" : "İNCELEME GEREKLİ"; await sendMessage(`SİNYAL ${item.source === "btk" ? "BTK" : "GÜVENLİNET"}\nDomain: ${item.domain}\nDurum: ${label}\n${result.verdict}`); return { handled: true as const, status: result.status }; } catch (error) { await sendMessage(`Sorgu tamamlanamadı: ${error instanceof Error ? error.message : "Bilinmeyen hata"}`); return { handled: true as const, status: "error" as const }; }
 }
 export function getMonitorResults(domain: string) { const result = results.get(domain); return result && Date.now() - result.createdAt < 5 * 60 * 1000 ? result.items : null; }
