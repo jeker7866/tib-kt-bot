@@ -1,69 +1,55 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Activity, CheckCircle2, ExternalLink, Loader2, MessageCircle, Radar, ShieldAlert, XCircle } from "lucide-react";
+import { Activity, CheckCircle2, ExternalLink, Loader2, MessageCircle, Radar, ShieldAlert, Square, XCircle } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 
 type ScanState = "idle" | "loading" | "waiting" | "done" | "error";
 const sourceName = (source: string) => source === "btk" ? "BTK" : "GüvenliNet";
+const periods = [{ value: 30, label: "30 saniye" }, { value: 60, label: "1 dakika" }, { value: 300, label: "5 dakika" }, { value: 600, label: "10 dakika" }];
 
 export default function Home() {
   const [domain, setDomain] = useState("");
   const [scanDomain, setScanDomain] = useState("");
   const [state, setState] = useState<ScanState>("idle");
   const [error, setError] = useState("");
+  const [primaryUrl, setPrimaryUrl] = useState("");
+  const [intervalSeconds, setIntervalSeconds] = useState(30);
   const monitor = trpc.monitor.challenge.useMutation();
-  const result = trpc.monitor.results.useQuery(
-    { domain: scanDomain || "example.com" },
-    { enabled: state === "waiting" && Boolean(scanDomain), refetchInterval: state === "waiting" ? 2500 : false },
-  );
+  const watchCreate = trpc.monitor.watchCreate.useMutation();
+  const watchList = trpc.monitor.watchList.useQuery(undefined, { refetchInterval: 5000 });
+  const watchStop = trpc.monitor.watchStop.useMutation({ onSuccess: () => watchList.refetch() });
+  const result = trpc.monitor.results.useQuery({ domain: scanDomain || "example.com" }, { enabled: state === "waiting" && Boolean(scanDomain), refetchInterval: state === "waiting" ? 2500 : false });
   useEffect(() => {
-    if (result.data && result.data.length > 0) setState("done");
-  }, [result.data]);
+    const expectedSources = Object.keys(monitor.data?.sources ?? {}).length;
+    if (expectedSources > 0 && result.data && result.data.length >= expectedSources) setState("done");
+  }, [result.data, monitor.data?.sources]);
 
   const start = async (event: FormEvent) => {
     event.preventDefault();
     const clean = domain.trim().replace(/^https?:\/\//i, "").replace(/\/$/, "");
     if (!clean) return;
-    setScanDomain(clean);
-    setError("");
-    setState("loading");
-    try {
-      const response = await monitor.mutateAsync({ domain: clean });
-      if (Object.keys(response.sources).length === 0) {
-        setError(Object.values(response.sourceErrors).join(" ") || "Hiçbir kaynak CAPTCHA üretemedi.");
-        setState("error");
-      } else {
-        setState("waiting");
-      }
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Kontrol başlatılamadı.");
-      setState("error");
-    }
+    setScanDomain(clean); setError(""); setState("loading");
+    try { const response = await monitor.mutateAsync({ domain: clean }); setState(Object.keys(response.sources).length ? "waiting" : "error"); if (!Object.keys(response.sources).length) setError(Object.values(response.sourceErrors).join(" ") || "Hiçbir kaynak CAPTCHA üretemedi."); }
+    catch (caught) { setError(caught instanceof Error ? caught.message : "Kontrol başlatılamadı."); setState("error"); }
   };
-
+  const createWatch = async (event: FormEvent) => {
+    event.preventDefault();
+    try { await watchCreate.mutateAsync({ primaryUrl, intervalSeconds }); setPrimaryUrl(""); await watchList.refetch(); }
+    catch (caught) { setError(caught instanceof Error ? caught.message : "Link izleme başlatılamadı."); }
+  };
   const sources = Object.entries(monitor.data?.sources ?? {});
   const sourceErrors = Object.entries(monitor.data?.sourceErrors ?? {});
   const results = result.data ?? [];
   const telegramError = monitor.data?.telegramError;
 
-  return (
-    <main className="min-h-screen bg-[#07100d] text-[#e9f3ed]">
-      <div className="mx-auto max-w-6xl px-5 pb-16 sm:px-8">
-        <header className="flex items-center justify-between py-7">
-          <a href="/" className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded-xl bg-[#8ef0b5] text-[#07100d]"><Radar size={19} /></span><span className="font-mono text-sm font-bold tracking-[.24em]">SİNYAL<span className="text-[#8ef0b5]">_</span></span></a>
-          <a href="/admin" className="text-sm text-[#9ab4a5] hover:text-[#8ef0b5]">Admin / durum</a>
-        </header>
-        <section className="grid gap-10 pb-14 pt-16 lg:grid-cols-[1fr_.9fr] lg:items-end">
-          <div><p className="mb-5 flex items-center gap-2 font-mono text-xs uppercase tracking-[.22em] text-[#8ef0b5]"><Activity size={14} /> BTK + GüvenliNet canlı sorgu</p><h1 className="max-w-2xl text-5xl font-semibold leading-[.98] tracking-[-.06em] sm:text-7xl">İki kaynaktan<br /><span className="text-[#8ef0b5]">tek sinyal.</span></h1><p className="mt-7 max-w-xl text-base leading-7 text-[#9ab4a5]">Domaininizi iki resmi kaynaktan kontrol ederiz. CAPTCHA görselleri Telegram grubunuza gider; botunuza kodu gönderdiğinizde sonuçlar burada birleşir.</p></div>
-          <div className="rounded-3xl border border-[#244436] bg-[#0d1a15]/90 p-6 shadow-2xl shadow-black/20"><p className="font-mono text-xs uppercase tracking-widest text-[#718d7d]">Yeni çift kaynak kontrolü</p><h2 className="mt-2 text-xl font-medium">Alan adı ekle</h2><form onSubmit={start} className="mt-5 flex gap-2"><input value={domain} onChange={(event) => setDomain(event.target.value)} placeholder="ornek.com" className="min-w-0 flex-1 rounded-xl border border-[#315542] bg-[#07100d] px-4 py-3 text-sm outline-none focus:border-[#8ef0b5]" /><button disabled={state === "loading"} className="grid size-12 shrink-0 place-items-center rounded-xl bg-[#8ef0b5] text-[#07100d] hover:bg-[#b4ffcc] disabled:opacity-60">{state === "loading" ? <Loader2 className="animate-spin" size={18} /> : <Activity size={18} />}</button></form><p className="mt-4 flex gap-2 text-xs text-[#718d7d]"><MessageCircle size={14} className="text-[#8ef0b5]" /> CAPTCHA Telegram grubuna otomatik iletilir; yapılandırılmamışsa aşağıda görsel görünür</p></div>
-        </section>
-        {state !== "idle" && <section className="rounded-3xl border border-[#244436] bg-[#0b1712]/90 p-6 sm:p-8"><div className="flex flex-wrap items-center justify-between gap-4"><div><p className="font-mono text-xs uppercase tracking-widest text-[#718d7d]">{scanDomain}</p><h2 className="mt-2 text-2xl font-medium">{state === "waiting" ? "Doğrulama bekleniyor" : state === "done" ? "Kaynak sonuçları" : state === "error" ? "Kontrol başlatılamadı" : "Kaynaklar hazırlanıyor"}</h2></div>{state === "waiting" && <div className="flex items-center gap-2 rounded-full bg-[#f0c674]/10 px-3 py-2 text-xs text-[#f0c674]"><Loader2 size={14} className="animate-spin" /> Yanıt bekleniyor</div>}</div>
-          {error && <p className="mt-5 rounded-xl bg-[#ff8c8c]/10 p-4 text-sm text-[#ffb0b0]">{error}</p>}
-          {telegramError && <div className="mt-5 rounded-xl border border-[#f0c674]/30 bg-[#f0c674]/10 p-4 text-sm text-[#f5d98b]"><div className="flex items-center gap-2 font-medium"><MessageCircle size={16} /> Telegram durumu</div><p className="mt-2 leading-6">{telegramError}</p><p className="mt-2 text-xs text-[#c6aa62]">Gerçek Telegram gönderimi için TELEGRAM_BOT_TOKEN ve TELEGRAM_CHAT_ID tanımlanmalıdır.</p></div>}
-          {state === "waiting" && <div className="mt-6"><p className="mb-4 text-sm text-[#9ab4a5]">Aşağıdaki CAPTCHA görsellerini Telegram grubunda yanıtlayın. Bot bağlantısı hazır olduğunda şu komut biçimini kullanın: <code className="text-[#8ef0b5]">/kod btk KOD</code> veya <code className="text-[#8ef0b5]">/kod guvenlinet KOD</code>.</p><div className="grid gap-4 md:grid-cols-2">{sources.map(([source, item]) => <div key={source} className="rounded-2xl border border-[#315542] bg-[#07100d] p-5"><div className="flex items-center justify-between"><span className="font-mono text-xs uppercase tracking-widest text-[#718d7d]">{sourceName(source)} CAPTCHA</span><MessageCircle size={17} className="text-[#8ef0b5]" /></div><img src={item.image} alt={`${sourceName(source)} CAPTCHA`} className="mt-4 h-20 w-full rounded-lg bg-white object-contain p-2" /><p className="mt-3 text-xs leading-5 text-[#718d7d]">{telegramError ? "Telegram ayarı eksik; bu görseli yalnızca önizleme olarak görebilirsiniz." : "Görsel Telegram grubuna gönderildi; kodu bot mesajına yanıt olarak iletin."}</p></div>)}{sourceErrors.map(([source, message]) => <div key={source} className="rounded-2xl border border-[#ff8c8c]/30 bg-[#ff8c8c]/10 p-5"><div className="flex items-center gap-2 text-sm font-medium text-[#ffb0b0]"><XCircle size={17} /> {sourceName(source)} kullanılamıyor</div><p className="mt-3 text-sm leading-6 text-[#e5b0b0]">{message}</p></div>)}</div></div>}
-          {state === "done" && <div className="mt-6 grid gap-4 md:grid-cols-2">{results.map((item) => <div key={item.source} className="rounded-2xl border border-[#315542] bg-[#07100d] p-5"><div className="flex items-center justify-between"><span className="font-mono text-xs uppercase tracking-widest text-[#718d7d]">{sourceName(item.source)}</span>{item.status === "blocked" ? <ShieldAlert className="text-[#ff8c8c]" size={20} /> : item.status === "clear" ? <CheckCircle2 className="text-[#8ef0b5]" size={20} /> : <XCircle className="text-[#f0c674]" size={20} />}</div><h3 className={`mt-4 text-lg ${item.status === "blocked" ? "text-[#ff8c8c]" : item.status === "clear" ? "text-[#8ef0b5]" : "text-[#f0c674]"}`}>{item.status === "blocked" ? "Engel var" : item.status === "clear" ? "Engel yok" : item.status === "captcha_invalid" ? "CAPTCHA hatalı" : "İnceleme gerekli"}</h3><p className="mt-2 text-sm leading-6 text-[#9ab4a5]">{item.verdict}</p><details className="mt-3 text-xs text-[#718d7d]"><summary className="cursor-pointer">Kaynak yanıtını göster</summary><p className="mt-2 leading-5">{item.evidence}</p></details><a href={item.sourceUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 text-xs text-[#718d7d] hover:text-[#8ef0b5]">Kaynağı aç <ExternalLink size={13} /></a></div>)}</div>}
-        </section>}
-        <footer className="flex justify-between pt-10 text-xs text-[#4e695a]"><span>SİNYAL / RESMİ KAYNAK KARŞILAŞTIRMASI</span><span>BTK · GüvenliNet</span></footer>
-      </div>
-    </main>
-  );
+  return <main className="min-h-screen bg-[#07100d] text-[#e9f3ed]"><div className="mx-auto max-w-6xl px-5 pb-16 sm:px-8">
+    <header className="flex items-center justify-between py-7"><a href="/" className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded-xl bg-[#8ef0b5] text-[#07100d]"><Radar size={19} /></span><span className="font-mono text-sm font-bold tracking-[.24em]">SİNYAL<span className="text-[#8ef0b5]">_</span></span></a><a href="/admin" className="text-sm text-[#9ab4a5] hover:text-[#8ef0b5]">Admin / durum</a></header>
+    <section className="grid gap-10 pb-12 pt-16 lg:grid-cols-[1fr_.9fr] lg:items-end"><div><p className="mb-5 flex items-center gap-2 font-mono text-xs uppercase tracking-[.22em] text-[#8ef0b5]"><Activity size={14} /> BTK + GüvenliNet canlı sorgu</p><h1 className="max-w-2xl text-5xl font-semibold leading-[.98] tracking-[-.06em] sm:text-7xl">İki kaynaktan<br /><span className="text-[#8ef0b5]">tek sinyal.</span></h1><p className="mt-7 max-w-xl text-base leading-7 text-[#9ab4a5]">Ana linki ve yönlendirdiği gerçek adresi izleriz. CAPTCHA görselleri Telegram grubunuza gider; kodlar doğru girilene kadar iki kaynak kartı ekranda kalır.</p></div>
+      <div className="rounded-3xl border border-[#244436] bg-[#0d1a15]/90 p-6 shadow-2xl shadow-black/20"><p className="font-mono text-xs uppercase tracking-widest text-[#718d7d]">Yeni çift kaynak kontrolü</p><h2 className="mt-2 text-xl font-medium">Alan adı ekle</h2><form onSubmit={start} className="mt-5 flex gap-2"><input value={domain} onChange={(event) => setDomain(event.target.value)} placeholder="ornek.com" className="min-w-0 flex-1 rounded-xl border border-[#315542] bg-[#07100d] px-4 py-3 text-sm outline-none focus:border-[#8ef0b5]" /><button disabled={state === "loading"} className="grid size-12 shrink-0 place-items-center rounded-xl bg-[#8ef0b5] text-[#07100d] hover:bg-[#b4ffcc] disabled:opacity-60">{state === "loading" ? <Loader2 className="animate-spin" size={18} /> : <Activity size={18} />}</button></form><p className="mt-4 flex gap-2 text-xs text-[#718d7d]"><MessageCircle size={14} className="text-[#8ef0b5]" /> İki CAPTCHA da Telegram’a gönderilir; birinin sonucu gelince diğeri kaybolmaz.</p></div></section>
+    <section className="mb-8 rounded-3xl border border-[#244436] bg-[#0d1a15]/90 p-6 sm:p-8"><div className="flex items-start justify-between gap-4"><div><p className="font-mono text-xs uppercase tracking-widest text-[#718d7d]">Otomatik link izleme</p><h2 className="mt-2 text-2xl font-medium">Ana link → yönlendirme linki</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-[#9ab4a5]">Ana link sabit kalır. Sistem yönlendirdiği son adresi çözer ve her periyotta hem ana hem hedef adres için BTK + GüvenliNet CAPTCHA gönderir.</p></div><Radar className="text-[#8ef0b5]" size={22} /></div><form onSubmit={createWatch} className="mt-5 grid gap-3 md:grid-cols-[1fr_180px_auto]"><input required type="url" value={primaryUrl} onChange={(event) => setPrimaryUrl(event.target.value)} placeholder="https://ana-link.com" className="rounded-xl border border-[#315542] bg-[#07100d] px-4 py-3 text-sm outline-none focus:border-[#8ef0b5]" /><select value={intervalSeconds} onChange={(event) => setIntervalSeconds(Number(event.target.value))} className="rounded-xl border border-[#315542] bg-[#07100d] px-4 py-3 text-sm outline-none focus:border-[#8ef0b5]">{periods.map((period) => <option key={period.value} value={period.value}>{period.label}</option>)}</select><button disabled={watchCreate.isPending} className="rounded-xl bg-[#8ef0b5] px-5 py-3 text-sm font-medium text-[#07100d] disabled:opacity-60">{watchCreate.isPending ? "Başlatılıyor…" : "İzlemeyi başlat"}</button></form>{watchList.data && watchList.data.length > 0 && <div className="mt-6 grid gap-3">{watchList.data.map((watch) => <div key={watch.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#315542] bg-[#07100d] p-4"><div className="min-w-0"><p className="truncate text-sm">{watch.primaryUrl}</p><p className="mt-1 text-xs text-[#718d7d]">{watch.resolvedUrl ? `Hedef: ${watch.resolvedUrl}` : "Hedef çözülüyor…"} · Her {watch.intervalSeconds} saniye{watch.lastError ? ` · ${watch.lastError}` : ""}</p></div><button onClick={() => watchStop.mutate({ id: watch.id })} className="inline-flex items-center gap-2 rounded-lg border border-[#6b3a3a] px-3 py-2 text-xs text-[#ffb0b0] hover:bg-[#ff8c8c]/10"><Square size={12} /> Durdur</button></div>)}</div>}</section>
+    {state !== "idle" && <section className="rounded-3xl border border-[#244436] bg-[#0b1712]/90 p-6 sm:p-8"><div className="flex flex-wrap items-center justify-between gap-4"><div><p className="font-mono text-xs uppercase tracking-widest text-[#718d7d]">{scanDomain}</p><h2 className="mt-2 text-2xl font-medium">{state === "waiting" ? "Doğrulama bekleniyor" : state === "done" ? "Kaynak sonuçları" : state === "error" ? "Kontrol başlatılamadı" : "Kaynaklar hazırlanıyor"}</h2></div>{state === "waiting" && <div className="flex items-center gap-2 rounded-full bg-[#f0c674]/10 px-3 py-2 text-xs text-[#f0c674]"><Loader2 size={14} className="animate-spin" /> Yanıt bekleniyor</div>}</div>{error && <p className="mt-5 rounded-xl bg-[#ff8c8c]/10 p-4 text-sm text-[#ffb0b0]">{error}</p>}{telegramError && <div className="mt-5 rounded-xl border border-[#f0c674]/30 bg-[#f0c674]/10 p-4 text-sm text-[#f5d98b]"><div className="flex items-center gap-2 font-medium"><MessageCircle size={16} /> Telegram durumu</div><p className="mt-2 leading-6">{telegramError}</p></div>}
+      {state === "waiting" && <div className="mt-6"><p className="mb-4 text-sm text-[#9ab4a5]">CAPTCHA görselini Telegram’da yanıtlayın. İsterseniz <code className="text-[#8ef0b5]">/kod btk KOD</code> veya <code className="text-[#8ef0b5]">/kod guvenlinet KOD</code> kullanabilirsiniz.</p><div className="grid gap-4 md:grid-cols-2">{sources.map(([source, item]) => <div key={source} className="rounded-2xl border border-[#315542] bg-[#07100d] p-5"><div className="flex items-center justify-between"><span className="font-mono text-xs uppercase tracking-widest text-[#718d7d]">{sourceName(source)} CAPTCHA</span><MessageCircle size={17} className="text-[#8ef0b5]" /></div><img src={item.image} alt={`${sourceName(source)} CAPTCHA`} className="mt-4 h-20 w-full rounded-lg bg-white object-contain p-2" /><p className="mt-3 text-xs leading-5 text-[#718d7d]">Kod doğru girilene kadar bu kart ekranda kalır.</p></div>)}{sourceErrors.map(([source, message]) => <div key={source} className="rounded-2xl border border-[#ff8c8c]/30 bg-[#ff8c8c]/10 p-5"><div className="flex items-center gap-2 text-sm font-medium text-[#ffb0b0]"><XCircle size={17} /> {sourceName(source)} kullanılamıyor</div><p className="mt-3 text-sm leading-6 text-[#e5b0b0]">{message}</p></div>)}</div></div>}
+      {state === "done" && <div className="mt-6 grid gap-4 md:grid-cols-2">{results.map((item) => <div key={item.source} className="rounded-2xl border border-[#315542] bg-[#07100d] p-5"><div className="flex items-center justify-between"><span className="font-mono text-xs uppercase tracking-widest text-[#718d7d]">{sourceName(item.source)}</span>{item.status === "blocked" ? <ShieldAlert className="text-[#ff8c8c]" size={20} /> : item.status === "clear" ? <CheckCircle2 className="text-[#8ef0b5]" size={20} /> : <XCircle className="text-[#f0c674]" size={20} />}</div><h3 className={`mt-4 text-lg ${item.status === "blocked" ? "text-[#ff8c8c]" : item.status === "clear" ? "text-[#8ef0b5]" : "text-[#f0c674]"}`}>{item.status === "blocked" ? "Engel var" : item.status === "clear" ? "Engel yok" : item.status === "captcha_invalid" ? "CAPTCHA hatalı" : "İnceleme gerekli"}</h3><p className="mt-2 text-sm leading-6 text-[#9ab4a5]">{item.verdict}</p><details className="mt-3 text-xs text-[#718d7d]"><summary className="cursor-pointer">Kaynak yanıtını göster</summary><p className="mt-2 leading-5">{item.evidence}</p></details><a href={item.sourceUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 text-xs text-[#718d7d] hover:text-[#8ef0b5]">Kaynağı aç <ExternalLink size={13} /></a></div>)}</div>}
+    </section>}
+    <footer className="flex justify-between pt-10 text-xs text-[#4e695a]"><span>SİNYAL / RESMİ KAYNAK KARŞILAŞTIRMASI</span><span>BTK · GüvenliNet</span></footer>
+  </div></main>;
 }
