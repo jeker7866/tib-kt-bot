@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { createMonitorChallenge, querySource, type Source, cleanupMonitorChallenges, type SourceResult } from "./monitor";
+import { createMonitorChallenge, querySource, refreshSourceChallenge, type Source, cleanupMonitorChallenges, type SourceResult } from "./monitor";
 
 type TelegramResponse<T> = { ok: boolean; result?: T; description?: string };
 type TelegramUpdate = { message?: { message_id: number; chat?: { id: number | string }; text?: string; reply_to_message?: { message_id?: number } } };
@@ -63,7 +63,22 @@ export async function handleTelegramUpdate(update: TelegramUpdate) {
   const reply = message.reply_to_message?.message_id; const repliedItem = reply ? pending.get(String(reply)) : undefined;
   const parsed = message.text ? parseCode(message.text, repliedItem?.source) : null; if (!parsed) return { handled: false as const };
   const item = repliedItem ?? Array.from(pending.values()).sort((a, b) => b.createdAt - a.createdAt).find((x) => x.source === parsed.source); if (!item || item.source !== parsed.source || Date.now() - item.createdAt > 5 * 60 * 1000) { await sendMessage("Bekleyen CAPTCHA bulunamadı. Önce yeni domain kontrolü başlatın."); return { handled: true as const, status: "no_challenge" as const }; }
-  try { const result = await querySource({ challengeId: item.challengeId, domain: item.domain, securityCode: parsed.code }); pending.delete(String(item.messageId)); const current = results.get(item.domain) || { domain: item.domain, items: [], createdAt: Date.now() }; current.items = [...current.items.filter((x) => x.source !== result.source), result]; current.createdAt = Date.now(); results.set(item.domain, current); const label = result.status === "blocked" ? "ENGEL VAR" : result.status === "clear" ? "ENGEL YOK" : result.status === "captcha_invalid" ? "CAPTCHA HATALI" : "İNCELEME GEREKLİ"; await sendMessage(`SİNYAL ${item.source === "btk" ? "BTK" : "GÜVENLİNET"}\nDomain: ${item.domain}\nDurum: ${label}\n${result.verdict}`); return { handled: true as const, status: result.status }; } catch (error) { await sendMessage(`Sorgu tamamlanamadı: ${error instanceof Error ? error.message : "Bilinmeyen hata"}`); return { handled: true as const, status: "error" as const }; }
+  try {
+    const result = await querySource({ challengeId: item.challengeId, domain: item.domain, securityCode: parsed.code });
+    if (result.status === "captcha_invalid") {
+      const next = await refreshSourceChallenge(item.challengeId);
+      await sendMessage(`SİNYAL ${item.source === "btk" ? "BTK" : "GÜVENLİNET"}\nDomain: ${item.domain}\nDurum: CAPTCHA HATALI\nKod yanlış. Yeni CAPTCHA gönderildi; doğru kodu yeni görsele yanıtlayın.`);
+      await sendCaptcha({ ...next, domain: item.domain, source: item.source });
+      pending.delete(String(item.messageId));
+      return { handled: true as const, status: result.status };
+    }
+    pending.delete(String(item.messageId));
+    const current = results.get(item.domain) || { domain: item.domain, items: [], createdAt: Date.now() };
+    current.items = [...current.items.filter((x) => x.source !== result.source), result]; current.createdAt = Date.now(); results.set(item.domain, current);
+    const label = result.status === "blocked" ? "ENGEL VAR" : result.status === "clear" ? "ENGEL YOK" : "İNCELEME GEREKLİ";
+    await sendMessage(`SİNYAL ${item.source === "btk" ? "BTK" : "GÜVENLİNET"}\nDomain: ${item.domain}\nDurum: ${label}\n${result.verdict}`);
+    return { handled: true as const, status: result.status };
+  } catch (error) { await sendMessage(`Sorgu tamamlanamadı: ${error instanceof Error ? error.message : "Bilinmeyen hata"}`); return { handled: true as const, status: "error" as const }; }
 }
 export function getMonitorResults(domain: string) { const result = results.get(domain); return result && Date.now() - result.createdAt < 5 * 60 * 1000 ? result.items : null; }
 export type { TelegramUpdate };

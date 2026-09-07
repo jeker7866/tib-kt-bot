@@ -155,10 +155,20 @@ export async function querySource(input: { challengeId: string; domain: string; 
   const endpoint = challenge.source === "guvenlinet" ? "https://www.guvenlinet.org.tr/ajax/sorgu/sorgula.php" : challenge.queryUrl;
   const response = await siteRequest(endpoint, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: challenge.cookie, Host: new URL(challenge.queryUrl).host, Referer: challenge.queryUrl, Origin: new URL(challenge.queryUrl).origin, "User-Agent": "Sinyal/1.0" }, body, timeoutMs: 20000 });
   const raw = await response.text();
-  challenges.delete(input.challengeId);
   const evidence = textOnly(raw).slice(0, 1200);
   const status = statusFromText(evidence);
+  if (status !== "captcha_invalid") challenges.delete(input.challengeId);
   return { source: challenge.source, status, verdict: verdict(status, challenge.source), evidence, sourceUrl: challenge.queryUrl };
+}
+
+export async function refreshSourceChallenge(challengeId: string) {
+  const current = challenges.get(challengeId);
+  if (!current) throw new Error("CAPTCHA oturumu sona erdi; yeni sorgu başlatın.");
+  const opened = current.source === "btk" ? await openBtk() : await openGuvenli();
+  challenges.delete(challengeId);
+  const nextId = randomUUID();
+  challenges.set(nextId, { source: opened.source, cookie: opened.cookie, queryUrl: opened.queryUrl, createdAt: Date.now() });
+  return { challengeId: nextId, image: opened.image, source: opened.source };
 }
 
 export function cleanupMonitorChallenges() {
