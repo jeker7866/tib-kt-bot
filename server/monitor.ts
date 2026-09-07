@@ -81,7 +81,7 @@ function errorMessage(error: unknown, source: Source) {
 }
 function statusFromText(text: string): SourceResult["status"] {
   if (/güvenlik kodunu\s+(yanlış|hatalı|geçersiz)|(?:captcha|security code).{0,40}(yanlış|hatalı|geçersiz|invalid|incorrect)/i.test(text)) return "captcha_invalid";
-  if (/erişime engellenmiştir|erişim engeli|engellenmiştir|has been blocked|uygulanmakta olan kararlar|erişilmemektedir|erişilmesin|zararlı içerik/i.test(text)) return "blocked";
+  if (/erişime engellenmiştir|erişim engeli|engellenmiştir|aile\s+(erişim|profil|güvenli internet)|aile\s+engeli|family\s+(access|filter|profile)|has been blocked|uygulanmakta olan kararlar|erişilmemektedir|erişilmesin|zararlı içerik/i.test(text)) return "blocked";
   if (/karar bulunamadı|uygulanan bir karar bulunamadı|herhangi bir karar bulunamadı|engel bulunamadı|profil dışında/i.test(text)) return "clear";
   return "review";
 }

@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 import { classifySourceText, createMonitorChallenge } from "./monitor";
 
 describe("monitor source responses", () => {
-  it("detects an access-block decision", () => {
-    expect(classifySourceText("Bu alan adına erişim engellenmiştir.")).toBe("blocked");
+  it("detects a blocked response", () => {
+    expect(classifySourceText("Bu siteye erişim engellenmiştir.")).toBe("blocked");
+  });
+
+  it("detects family internet restrictions as blocked", () => {
+    expect(classifySourceText("Bu alan adı Aile profili kapsamında engellenmiştir.")).toBe("blocked");
   });
 
   it("detects a clear decision", () => {
