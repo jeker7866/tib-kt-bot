@@ -30,10 +30,15 @@ async function siteRequest(url: string, init: { method?: string; headers?: Recor
   try {
     const args = ["-k", "-sS", "-L", "--max-time", String(Math.ceil(init.timeoutMs / 1000)), "-D", headerFile, "-o", bodyFile, "-X", init.method ?? "GET"];
     const btkProxy = process.env.BTK_PROXY_URL?.trim();
-    if (parsed.hostname.includes("btk.gov.tr") && btkProxy) args.push("--proxy", btkProxy);
+    const proxyArgs = parsed.hostname.includes("btk.gov.tr") && btkProxy ? ["--proxy", btkProxy] : [];
     for (const [key, value] of Object.entries(init.headers ?? {})) args.push("-H", `${key}: ${value}`);
     if (init.body !== undefined) args.push("--data-raw", typeof init.body === "string" ? init.body : init.body.toString());
-    await execFileAsync("curl", [...args, url], { timeout: init.timeoutMs + 3000, maxBuffer: 1024 * 1024 });
+    try {
+      await execFileAsync("curl", [...args, ...proxyArgs, url], { timeout: init.timeoutMs + 3000, maxBuffer: 1024 * 1024 });
+    } catch (error) {
+      if (proxyArgs.length === 0) throw error;
+      await execFileAsync("curl", [...args, url], { timeout: init.timeoutMs + 3000, maxBuffer: 1024 * 1024 });
+    }
     const rawHeaders = await readFile(headerFile, "utf8");
     const blocks = rawHeaders.split(/\r?\n\r?\n/).filter((block) => /^HTTP\//m.test(block));
     const finalHeaders = blocks.at(-1) ?? "";
