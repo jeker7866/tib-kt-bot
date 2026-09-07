@@ -10,6 +10,10 @@ describe("monitor source responses", () => {
     expect(classifySourceText("Bu alan adı Aile profili kapsamında engellenmiştir.")).toBe("blocked");
   });
 
+  it("detects the BTK family and child profile message as blocked", () => {
+    expect(classifySourceText("Bu alan adı aile ve çocuk profilinde görüntülenememektedir. (2026-09-01 09:24:58)")).toBe("blocked");
+  });
+
   it("detects a clear decision", () => {
     expect(classifySourceText("Uygulanan bir karar bulunamadı.")).toBe("clear");
   });
