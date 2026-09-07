@@ -13,7 +13,7 @@ export const appRouter = router({
   }),
   monitor: router({
     challenge: publicProcedure.input(z.object({ domain: z.string().min(3) })).mutation(async ({ input, ctx }) => {
-      const origin = typeof ctx.req.headers.origin === "string" ? ctx.req.headers.origin : `${ctx.req.protocol}://${ctx.req.get("host")}`;
+      const origin = process.env.PUBLIC_BASE_URL?.trim() || (typeof ctx.req.headers.origin === "string" ? ctx.req.headers.origin : `${ctx.req.protocol}://${ctx.req.get("host")}`);
       return startTelegramMonitor(input.domain, origin);
     }),
     results: publicProcedure.input(z.object({ domain: z.string().min(3) })).query(({ input }) => getMonitorResults(input.domain)),

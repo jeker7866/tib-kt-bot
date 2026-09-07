@@ -29,6 +29,8 @@ async function siteRequest(url: string, init: { method?: string; headers?: Recor
   const bodyFile = path.join(directory, "body.bin");
   try {
     const args = ["-k", "-sS", "-L", "--max-time", String(Math.ceil(init.timeoutMs / 1000)), "-D", headerFile, "-o", bodyFile, "-X", init.method ?? "GET"];
+    const btkProxy = process.env.BTK_PROXY_URL?.trim();
+    if (parsed.hostname.includes("btk.gov.tr") && btkProxy) args.push("--proxy", btkProxy);
     for (const [key, value] of Object.entries(init.headers ?? {})) args.push("-H", `${key}: ${value}`);
     if (init.body !== undefined) args.push("--data-raw", typeof init.body === "string" ? init.body : init.body.toString());
     await execFileAsync("curl", [...args, url], { timeout: init.timeoutMs + 3000, maxBuffer: 1024 * 1024 });
@@ -114,13 +116,13 @@ async function openBtk() {
   throw new Error(errorMessage(lastError, "btk"));
 }
 async function openGuvenli() {
-  const page = await siteRequest(GUVENLINET_URL, { headers: { "User-Agent": "Sinyal/1.0" }, timeoutMs: 15000 });
+  const page = await siteRequest(GUVENLINET_URL, { headers: { "User-Agent": "Sinyal/1.0" }, timeoutMs: 30000 });
   if (!page.ok) throw new Error(`GüvenliNet sayfası HTTP ${page.status} döndürdü`);
   const html = await page.text();
   const pageCookie = cookies(page);
   const path = html.match(/<img[^>]+src=["']([^"']*captcha\/get_captcha\.php[^"']*)["']/i)?.[1] ?? "/captcha/get_captcha.php";
   const imageUrl = new URL(path, GUVENLINET_URL).toString();
-  const image = await siteRequest(imageUrl, { headers: { Cookie: pageCookie, Referer: GUVENLINET_URL, "User-Agent": "Sinyal/1.0" }, timeoutMs: 15000 });
+  const image = await siteRequest(imageUrl, { headers: { Cookie: pageCookie, Referer: GUVENLINET_URL, "User-Agent": "Sinyal/1.0" }, timeoutMs: 30000 });
   if (!image.ok) throw new Error(`GüvenliNet CAPTCHA HTTP ${image.status} döndürdü`);
   return await imageResult("guvenlinet", image, pageCookie, GUVENLINET_URL);
 }
