@@ -80,7 +80,7 @@ function errorMessage(error: unknown, source: Source) {
   return error instanceof Error ? error.message : `${source === "btk" ? "BTK" : "GüvenliNet"} kaynağına ulaşılamadı.`;
 }
 function statusFromText(text: string): SourceResult["status"] {
-  if (/güvenlik kodunu yanlış|güvenlik kodunu giriniz|captcha|security code/i.test(text)) return "captcha_invalid";
+  if (/güvenlik kodunu\s+(yanlış|hatalı|geçersiz)|(?:captcha|security code).{0,40}(yanlış|hatalı|geçersiz|invalid|incorrect)/i.test(text)) return "captcha_invalid";
   if (/erişime engellenmiştir|erişim engeli|engellenmiştir|has been blocked|uygulanmakta olan kararlar|erişilmemektedir|erişilmesin|zararlı içerik/i.test(text)) return "blocked";
   if (/karar bulunamadı|uygulanan bir karar bulunamadı|herhangi bir karar bulunamadı|engel bulunamadı|profil dışında/i.test(text)) return "clear";
   return "review";

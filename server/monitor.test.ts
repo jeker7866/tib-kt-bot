@@ -14,6 +14,10 @@ describe("monitor source responses", () => {
     expect(classifySourceText("Güvenlik kodunu yanlış girdiniz.")).toBe("captcha_invalid");
   });
 
+  it("does not mark a normal page containing the word captcha as invalid", () => {
+    expect(classifySourceText("Güvenlik kodu doğrulandı. CAPTCHA bölümü kapatıldı. Engel bulunamadı.")).toBe("clear");
+  });
+
   it("rejects invalid domains before contacting a source", async () => {
     await expect(createMonitorChallenge("not a domain")).rejects.toThrow("Geçerli bir domain");
   });
