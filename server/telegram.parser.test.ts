@@ -14,6 +14,10 @@ describe("Telegram CAPTCHA code parser", () => {
     expect(parseCode("/kod btk KOD42")).toEqual({ source: "btk", code: "KOD42" });
   });
 
+  it("removes copy-format brackets around an explicit code", () => {
+    expect(parseCode("/kod btk <dMWEG>")).toEqual({ source: "btk", code: "dMWEG" });
+  });
+
   it("does not treat arbitrary text as a CAPTCHA code", () => {
     expect(parseCode("merhaba dünya!", "btk")).toBeNull();
   });

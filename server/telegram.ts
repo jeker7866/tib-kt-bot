@@ -54,8 +54,10 @@ export async function startTelegramMonitor(domain: string, publicBaseUrl: string
 export function parseCode(text: string, repliedSource?: Source) {
   const trimmed = text.trim();
   const match = trimmed.match(/^\/?kod\s+(btk|guvenlinet)\s+([^\s]+)$/i) || trimmed.match(/^\/?(btk|guvenlinet)\s+([^\s]+)$/i);
-  if (match) return { source: match[1].toLowerCase() as Source, code: match[2] };
-  if (repliedSource && /^[a-z0-9]{3,64}$/i.test(trimmed)) return { source: repliedSource, code: trimmed };
+  const normalizeCode = (value: string) => value.replace(/^[<\[\("'`]+|[>\]\)"'`.,;:]+$/g, "");
+  if (match) return { source: match[1].toLowerCase() as Source, code: normalizeCode(match[2]) };
+  const directCode = normalizeCode(trimmed);
+  if (repliedSource && /^[a-z0-9]{3,64}$/i.test(directCode)) return { source: repliedSource, code: directCode };
   return null;
 }
 export async function handleTelegramUpdate(update: TelegramUpdate) {
