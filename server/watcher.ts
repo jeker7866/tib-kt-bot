@@ -6,7 +6,7 @@ import { startTelegramMonitor } from "./telegram";
 const execFileAsync = promisify(execFile);
 export const WATCH_INTERVALS = [30, 60, 300, 600] as const;
 export type WatchInterval = (typeof WATCH_INTERVALS)[number];
-type Watch = { id: string; primaryUrl: string; intervalSeconds: WatchInterval; timer: NodeJS.Timeout; createdAt: number; lastResolvedUrl?: string; lastError?: string };
+type Watch = { id: string; primaryUrl: string; intervalSeconds: WatchInterval; timer: NodeJS.Timeout; createdAt: number; lastResolvedUrl?: string; lastError?: string; running?: boolean };
 const watches = new Map<string, Watch>();
 
 function validateUrl(value: string) {
@@ -23,17 +23,22 @@ async function resolveRedirect(url: string) {
 }
 
 async function runWatch(watch: Watch) {
+  if (watch.running) return;
+  watch.running = true;
   try {
     const resolved = await resolveRedirect(watch.primaryUrl);
     watch.lastResolvedUrl = resolved;
     watch.lastError = undefined;
     const urls = Array.from(new Set([watch.primaryUrl, resolved]));
     const baseUrl = process.env.PUBLIC_BASE_URL?.trim() || "";
-    for (const target of urls) {
+    const hosts = Array.from(new Set(urls.map((target) => new URL(target).hostname)));
+    for (const target of hosts) {
       await startTelegramMonitor(new URL(target).hostname, baseUrl);
     }
   } catch (error) {
     watch.lastError = error instanceof Error ? error.message : "İzleme sırasında hata oluştu.";
+  } finally {
+    watch.running = false;
   }
 }
 
