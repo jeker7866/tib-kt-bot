@@ -5,6 +5,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { startTelegramMonitor, getMonitorResults } from "./telegram";
 import { createLinkWatch, listLinkWatches, stopLinkWatch } from "./watcher";
+import { getNordCountries, getNordStatus } from "./nordvpn";
 
 export const appRouter = router({
   system: systemRouter,
@@ -21,6 +22,10 @@ export const appRouter = router({
     watchCreate: publicProcedure.input(z.object({ primaryUrl: z.string().url(), intervalSeconds: z.number().int() })).mutation(({ input }) => createLinkWatch(input.primaryUrl, input.intervalSeconds)),
     watchList: publicProcedure.query(() => listLinkWatches()),
     watchStop: publicProcedure.input(z.object({ id: z.string().min(1) })).mutation(({ input }) => ({ stopped: stopLinkWatch(input.id) })),
+  }),
+  nordvpn: router({
+    countries: publicProcedure.query(() => getNordCountries()),
+    status: publicProcedure.query(() => getNordStatus()),
   }),
 });
 export type AppRouter = typeof appRouter;
